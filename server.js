@@ -139,7 +139,7 @@ const authLimiter = rateLimit({
 });
 
 const loginSlowDown = slowDown({
-  windowMs: 10 * 60_000, delayAfter: 3, delayMs: (hits) => hits * 400,
+  windowMs: 10 * 60_000, delayAfter: cfg.nodeEnv === 'test' ? 999 : 3, delayMs: (hits) => hits * 400,
 });
 
 // ══════════════════════════════════════════════
@@ -168,12 +168,12 @@ async function requireAuth(req, res, next) {
 const v = {
   register: Joi.object({
     nome:    Joi.string().min(2).max(80).required(),
-    email:   Joi.string().email().max(254).required(),
+    email:   Joi.string().email({ tlds: { allow: false } }).max(254).required(),
     senha:   Joi.string().min(8).max(128).required(),
     lgpd:    Joi.boolean().valid(true).required(),
   }),
   login: Joi.object({
-    email: Joi.string().email().required(),
+    email: Joi.string().email({ tlds: { allow: false } }).required(),
     senha: Joi.string().required(),
     device_fp: Joi.string().max(64).optional(),
     remember: Joi.boolean().optional(),
@@ -552,7 +552,7 @@ txRouter.post('/', validate(v.transaction), async (req, res) => {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.current_user_id = $1`, [req.user.sub]);
+    await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [req.user.sub]);
     // Verificar que a conta pertence ao usuário
     const acc = await client.query('SELECT id FROM accounts WHERE id=$1 AND user_id=$2 AND ativo=true', [account_id, req.user.sub]);
     if (!acc.rows.length) {
@@ -583,7 +583,7 @@ txRouter.put('/:id', validate(v.transaction), async (req, res) => {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.current_user_id = $1`, [req.user.sub]);
+    await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [req.user.sub]);
     // Reverter balanço antigo e aplicar novo via delete+insert
     await client.query('DELETE FROM transactions WHERE id=$1', [id]);
     const { rows } = await client.query(
@@ -606,7 +606,7 @@ txRouter.delete('/:id', async (req, res) => {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`SET LOCAL app.current_user_id = $1`, [req.user.sub]);
+    await client.query(`SELECT set_config('app.current_user_id', $1, true)`, [req.user.sub]);
     await client.query('DELETE FROM transactions WHERE id=$1', [req.params.id]);
     await client.query('COMMIT');
     await audit(req.user.sub, 'DELETE_TRANSACTION', 'transactions', req.params.id, rows[0], null, req);
