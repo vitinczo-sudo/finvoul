@@ -1,0 +1,27 @@
+# Dependências
+node_modules/
+
+# Ambiente
+.env
+.env.*
+!.env.example
+
+# Chaves RSA/AES — nunca commitar
+keys/
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage/
+
+# Build
+dist/
+
+# macOS
+.DS_Store
+
+# Certificados TLS
+certbot_certs/
+certbot_www/
