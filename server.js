@@ -155,8 +155,6 @@ async function requireAuth(req, res, next) {
     const revoked = await redisClient.get(`revoked:${payload.jti}`);
     if (revoked) return res.status(401).json({ error: 'Token revogado' });
     req.user = payload;
-    // Set RLS context
-    await db.query(`SET LOCAL app.current_user_id = $1`, [payload.sub]);
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') return res.status(401).json({ error: 'Token expirado', code: 'TOKEN_EXPIRED' });
@@ -533,12 +531,12 @@ const txRouter = express.Router();
 txRouter.use(requireAuth);
 
 txRouter.get('/', async (req, res) => {
-  const { from, to, type, account_id, category_id, search, limit=50, offset=0 } = req.query;
+  const { from, to, tipo, account_id, category_id, search, limit=50, offset=0 } = req.query;
   let q = 'SELECT t.*,c.nome as categoria_nome,c.icone as categoria_icone,a.nome as conta_nome FROM transactions t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN accounts a ON a.id=t.account_id WHERE t.user_id=$1';
   const params = [req.user.sub];
   if (from)        { params.push(from);        q += ` AND t.data >= $${params.length}`; }
   if (to)          { params.push(to);           q += ` AND t.data <= $${params.length}`; }
-  if (type)        { params.push(type);         q += ` AND t.tipo = $${params.length}`; }
+  if (tipo)        { params.push(tipo);         q += ` AND t.tipo = $${params.length}`; }
   if (account_id)  { params.push(account_id);   q += ` AND t.account_id = $${params.length}`; }
   if (category_id) { params.push(category_id);  q += ` AND t.category_id = $${params.length}`; }
   if (search)      { params.push(`%${search}%`); q += ` AND t.descricao ILIKE $${params.length}`; }
@@ -557,7 +555,10 @@ txRouter.post('/', validate(v.transaction), async (req, res) => {
     await client.query(`SET LOCAL app.current_user_id = $1`, [req.user.sub]);
     // Verificar que a conta pertence ao usuário
     const acc = await client.query('SELECT id FROM accounts WHERE id=$1 AND user_id=$2 AND ativo=true', [account_id, req.user.sub]);
-    if (!acc.rows.length) return res.status(403).json({ error: 'Conta não encontrada' });
+    if (!acc.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'Conta não encontrada' });
+    }
 
     const { rows } = await client.query(
       `INSERT INTO transactions (user_id,account_id,category_id,tipo,valor,descricao,data,conta_destino_id,notas,recorrente_id)
